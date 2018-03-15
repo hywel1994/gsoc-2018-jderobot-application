@@ -38,7 +38,7 @@
 
 import rospy
 from nav_msgs.msg import Path
-from std_msgs.msg import String
+from std_msgs.msg import Int8
 from geometry_msgs.msg import PoseStamped
 
 try:
@@ -57,6 +57,14 @@ except:
 from math import sqrt
 from sys import argv
 import argparse
+
+
+startX = 0
+startY = 0
+goalX = 1
+goalY = 1
+init_ompl = 0
+
 
 ## @cond IGNORE
 # Our "collision checker". For this demo, our robot's state space
@@ -123,6 +131,7 @@ class ClearanceObjective(ob.StateCostIntegralObjective):
     # increases, the state cost decreases.
     def stateCost(self, s):
         return ob.Cost(1 / self.si_.getStateValidityChecker().clearance(s))
+
 
 ## Return an optimization objective which attempts to steer the robot
 #  away from obstacles.
@@ -203,96 +212,142 @@ def allocateObjective(si, objectiveType):
         OMPL_ERROR("Optimization-objective is not implemented in allocation function.");
 
 
+class ompl_plan():
+    def __init__(self):
+        self.start_x = 0
+        self.start_y = 0
+        self.goal_x = 0
+        self.goal_y = 0
+        self.path = 0
 
-def plan(runTime, plannerType, objectiveType, fname):
-    # Construct the robot state space in which we're planning. We're
-    # planning in [0,1]x[0,1], a subset of R^2.
-    space = ob.RealVectorStateSpace(2)
+    def plan(self, runTime, plannerType, objectiveType, fname):
+        # Construct the robot state space in which we're planning. We're
+        # planning in [0,1]x[0,1], a subset of R^2.
+        space = ob.RealVectorStateSpace(2)
 
-    # Set the bounds of space to be in [0,1].
-    space.setBounds(0.0, 1.0)
+        # Set the bounds of space to be in [0,1].
+        space.setBounds(0.0, 1.0)
 
-    # Construct a space information instance for this state space
-    si = ob.SpaceInformation(space)
+        # Construct a space information instance for this state space
+        si = ob.SpaceInformation(space)
 
-    # Set the object used to check which states in the space are valid
-    validityChecker = ValidityChecker(si)
-    si.setStateValidityChecker(validityChecker)
+        # Set the object used to check which states in the space are valid
+        validityChecker = ValidityChecker(si)
+        si.setStateValidityChecker(validityChecker)
 
-    si.setup()
+        si.setup()
 
-    # Set our robot's starting state to be the bottom-left corner of
-    # the environment, or (0,0).
-    start = ob.State(space)
-    start[0] = 0.0
-    start[1] = 0.0
+        # Set our robot's starting state to be the bottom-left corner of
+        # the environment, or (0,0).
+        start = ob.State(space)
+        start[0] = self.start_x
+        start[1] = self.start_y
 
-    # Set our robot's goal state to be the top-right corner of the
-    # environment, or (1,1).
-    goal = ob.State(space)
-    goal[0] = 1.0
-    goal[1] = 1.0
+        # Set our robot's goal state to be the top-right corner of the
+        # environment, or (1,1).
+        goal = ob.State(space)
+        goal[0] = self.goal_x
+        goal[1] = self.goal_y
 
-    # Create a problem instance
-    pdef = ob.ProblemDefinition(si)
+        print ("goal")
+        print self.goal_x
+        print self.goal_y
 
-    # Set the start and goal states
-    pdef.setStartAndGoalStates(start, goal)
+        # Create a problem instance
+        pdef = ob.ProblemDefinition(si)
 
-    # Create the optimization objective specified by our command-line argument.
-    # This helper function is simply a switch statement.
-    pdef.setOptimizationObjective(allocateObjective(si, objectiveType))
+        # Set the start and goal states
+        pdef.setStartAndGoalStates(start, goal)
 
-    # Construct the optimal planner specified by our command line argument.
-    # This helper function is simply a switch statement.
-    optimizingPlanner = allocatePlanner(si, plannerType)
+        # Create the optimization objective specified by our command-line argument.
+        # This helper function is simply a switch statement.
+        pdef.setOptimizationObjective(allocateObjective(si, objectiveType))
 
-    # Set the problem instance for our planner to solve
-    optimizingPlanner.setProblemDefinition(pdef)
-    optimizingPlanner.setup()
+        # Construct the optimal planner specified by our command line argument.
+        # This helper function is simply a switch statement.
+        optimizingPlanner = allocatePlanner(si, plannerType)
 
-    # attempt to solve the planning problem in the given runtime
-    solved = optimizingPlanner.solve(runTime)
+        # Set the problem instance for our planner to solve
+        optimizingPlanner.setProblemDefinition(pdef)
+        optimizingPlanner.setup()
 
-    if solved:
-        # Output the length of the path found
-        print("{0} found solution of path length {1:.4f} with an optimization objective value of {2:.4f}".format(optimizingPlanner.getName(), pdef.getSolutionPath().length(), pdef.getSolutionPath().cost(pdef.getOptimizationObjective()).value()))
+        # attempt to solve the planning problem in the given runtime
+        solved = optimizingPlanner.solve(runTime)
 
-        str = pdef.getSolutionPath().printAsMatrix()
-        #print(type(str))
-        #
-        x = str.split()
-        x = [float(x) for x in x if x]
-        print(x)
+        if solved:
+            # Output the length of the path found
+            #print("{0} found solution of path length {1:.4f} with an optimization objective value of {2:.4f}".format(optimizingPlanner.getName(), pdef.getSolutionPath().length(), pdef.getSolutionPath().cost(pdef.getOptimizationObjective()).value()))
 
-        num = len(x)
+            str = pdef.getSolutionPath().printAsMatrix()
+            #print(type(str))
+            #
+            x = str.split()
+            self.path = [float(x) for x in x if x]
+            #print(self.path)
 
-        pub = rospy.Publisher('path', Path, queue_size=10)
-        rospy.init_node('talker', anonymous=True)
-        rate = rospy.Rate(10)  # 10hz
+            #talker()
+        else:
+            print("No solution found.")
+
+        return self.path
+
+
+
+def start_callback(pose_msg):
+    global startX
+    global startY
+    startX = pose_msg.pose.position.x
+    startY = pose_msg.pose.position.y
+
+def goal_callback(pose_msg):
+    global goalX
+    global goalY
+    goalX = pose_msg.pose.position.x
+    goalY = pose_msg.pose.position.y
+
+def init_callback(msg):
+    global init_ompl
+    init_ompl = msg.data
+
+def ros_init(runtime, planner, objective, file):
+
+    omplPlan = ompl_plan()
+
+    pub = rospy.Publisher('path', Path, queue_size=10)
+    rospy.init_node('talker', anonymous=True)
+    rate = rospy.Rate(1)  # 10hz
+    start_sub = rospy.Subscriber('start_pose', PoseStamped, start_callback)
+    goal_sub = rospy.Subscriber('goal_pose', PoseStamped, goal_callback)
+    init_sub = rospy.Subscriber('init_ompl',Int8, init_callback)
+
+    while init_ompl == 0:
+        print ("not subscribe start_pose and goal_pose msg")
+
+    while not rospy.is_shutdown():
+
+        omplPlan.start_x = startX
+        omplPlan.start_y = startY
+        omplPlan.goal_x = goalX
+        omplPlan.goal_y = goalY
+
+        path = omplPlan.plan(runtime, planner, objective, file)
+        num = len(path)
 
         path_msg = Path()
 
         path_msg.header.stamp = rospy.Time.now()
-        path_msg.header.frame_id  = 'odom'
-        for i in range(0, num/2, 1):
+        path_msg.header.frame_id = 'odom'
+        for i in range(0, num / 2, 1):
             pose_msg = PoseStamped()
-            pose_msg.pose.position.x = x[2*i]
-            pose_msg.pose.position.y = x[2*i+1]
+            pose_msg.pose.position.x = path[2 * i]
+            pose_msg.pose.position.y = path[2 * i + 1]
             path_msg.poses.append(pose_msg)
 
-        while not rospy.is_shutdown():
+        #rospy.loginfo(path_msg)
+        pub.publish(path_msg)
+        rate.sleep()
 
-            #rospy.loginfo(path_msg)
-            pub.publish(path_msg)
-            rate.sleep()
-
-
-        #talker()
-    else:
-        print("No solution found.")
-
-
+    rospy.spin()
 
 
 if __name__ == "__main__":
@@ -321,9 +376,9 @@ if __name__ == "__main__":
     elif args.info == 2:
         ou.setLogLevel(ou.LOG_DEBUG)
     else:
-        OMPL_ERROR("Invalid log-level integer.");
+        OMPL_ERROR("Invalid log-level integer.")
 
     # Solve the planning problem
-    plan(args.runtime, args.planner, args.objective, args.file)
+    ros_init(args.runtime, args.planner, args.objective, args.file)
 
 ## @endcond

@@ -24,3 +24,13 @@ make
 cd ConwayGOF
 python3 main.py
 ```
+
+## 4.demp
+move the file to catkin workspace
+```
+catkin make
+rosrun ompl_gui ompl_gui
+rosrun path_planning_ompl OptimalPlanning.py
+rqt
+rviz #add path
+```
